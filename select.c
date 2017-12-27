@@ -10,6 +10,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 
 #define PORT 4021
 #define BUFSIZE 50
@@ -20,8 +21,18 @@ fd_set saveset;
 
 
 int main (void) {
-  
-  
+  // init block_set signal mask
+  sigset_t block_set;
+  sigemptyset(&block_set);
+  sigdelset(&block_set, SIGALRM);
+  sigprocmask (SIG_BLOCK, &block_set, NULL);
+    // Defer signal processing to select() block
+    // Signal blocking is actually signal deferrment.
+
+  // init empty_set signal mask
+  sigset_t empty_set;
+  sigemptyset(&empty_set);
+
   // set up passive socket
   int passive;
   struct sockaddr_in sin;
@@ -62,12 +73,13 @@ int main (void) {
   FD_SET(passive, &saveset);
   while(1) {
     memcpy (&readset, &saveset, sizeof(fd_set));
-    select (
+    pselect (
       FD_SETSIZE,  // nfds, number of file descriptors
       &readset,    // readfds
       NULL,        // writefds
       NULL,        // exceptfds, almost never used
-      NULL         // struct timeval *timeout, NULL for always block
+      NULL,        // struct timeval *timeout, NULL for always block
+      &empty_set   // sigmask, allow signal processing during select
     );
     if (FD_ISSET(passive, &readset)) {
       active = accept(passive, NULL, NULL);
@@ -83,9 +95,20 @@ int main (void) {
        * 
        */
       struct linger stay;
-      stay.l_onoff = 1;
+      stay.l_onoff  = 1;
       stay.l_linger = 0;
       setsockopt(active, SOL_SOCKET, SO_LINGER, &stay, sizeof(struct linger));
+
+      // set active to be non-blocking socket
+      int val;
+      val = fcntl(active, F_GETFL, 0);
+      if (val < 0) {
+        perror ("fcntl(F_GETFL) failed");
+      }
+      val = fcntl(active, F_SETFL, val | O_NONBLOCK);
+      if (val < 0) {
+        perror ("fcntl(F_SETFL) failed");
+      }
     }
     
     for (readsock = passive +1; readsock < FD_SETSIZE ; readsock++) {
@@ -94,7 +117,6 @@ int main (void) {
         continue;
       }
 
-      //printf ("active readsock: %d\n", readsock);
       memset (string, 0, BUFSIZE);
       int nread = read (readsock, string, BUFSIZE);
       if (nread < 0) {
@@ -102,18 +124,19 @@ int main (void) {
         exit(1);
       }
       string[strcspn(string, "\r\n")] = '\0';  // chomp
-      //printf ("from socket %d: '%s'\n", readsock, string);
 
       if ( nread == 0  // disconnected socket
         || strcmp(string, "quit") == 0) // user quitting
       {
         FD_CLR (readsock, &saveset);
         close(readsock);
+        printf ("closing %d\n", readsock);
         continue;
       }
       if (strlen(string) == 0) {
         continue;  // nothing to do
       }
+      printf ("read %d: '%s'\n", readsock, string);
       
       // write string to all other clients
       int writesock;
@@ -131,7 +154,7 @@ int main (void) {
           continue;
         }
 
-        //printf ("write (%d, '%s', %d)\n", writesock, string, BUFSIZE);
+        printf ("write %d: %s\n", writesock, string);
         if (write (writesock, string, BUFSIZE) < 0) {
           perror ("write() failed");
           exit(1);
