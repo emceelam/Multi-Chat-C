@@ -8,10 +8,10 @@
 CFLAGS := -O2 -Wall -pedantic
 INCLUDES := -I.
 
-all:  select
+all:  server
 
-select: select.c
+server: server.c
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^
 
 clean: 
-	$(RM) select
+	$(RM) server
