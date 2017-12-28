@@ -1,13 +1,11 @@
 # NAME
 
-multi_chat
-
-A socket-based multi-client chat
+multi_chat - A socket-based multi-client chat
 
 # SYNOPSIS
 
 make all
-./select
+./server
 
 # from other terminal
 telnet 127.0.0.1 4021
