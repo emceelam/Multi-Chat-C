@@ -7,11 +7,13 @@ multi_chat - A socket-based multi-client chat
 make all
 ./server
 
-# from other terminal
+\# from other terminal
 telnet 127.0.0.1 4021
 
-# from yet another terminal
+\# from yet another terminal
 telnet 127.0.0.1 4021
+
+\# start typing text in your telnet sessions
 
 ## DESCRIPTION
 
