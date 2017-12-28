@@ -11,25 +11,75 @@
 #include <arpa/inet.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <time.h>
+#include <errno.h>
 
 #define PORT 4021
 #define BUFSIZE 50
+#define TIMEOUT 10
+  // 10 second timeout
 
 int readsock;
 sigjmp_buf env;
 fd_set saveset;
+int sock_timeouts[FD_SETSIZE];
 
+
+void sig_alarm_handler (int signum) {
+  int now = time(NULL);
+  int min_timeout = 0;
+  for (int fd=0;fd<FD_SETSIZE;fd++) {
+    int timeout = sock_timeouts[fd];
+    if (timeout == 0) {
+      continue;
+    }
+    printf ("sig_alarm_handler: %d <= %d\n", timeout, now);
+    if (timeout <= now) {
+      printf ("time out socket %d\n",fd);
+
+      sock_timeouts[fd] = 0;
+      FD_CLR (fd, &saveset);
+      close (fd);
+      continue;
+    }
+    if (min_timeout == 0) {
+      min_timeout = timeout;
+      printf ("sig_handler: min_timeout = %d\n", min_timeout);
+      continue;
+    }
+    if (timeout < min_timeout) {
+      min_timeout = timeout;
+      printf ("sig_handler: min_timeout = %d\n", min_timeout);
+    }
+  }
+
+  if (min_timeout) {
+    int future = min_timeout - now;
+    future = future < 1 ? 1 : future;
+    printf ("sig_handler alarm(%d)\n", future);
+    alarm (future);
+  }
+}
 
 int main (void) {
-  // init block_set signal mask
+  // SIGALRM setup
+  struct sigaction sa;
+  sigfillset (&sa.sa_mask);
+  sa.sa_handler = sig_alarm_handler;
+  sa.sa_flags = 0;
+  if (sigaction(SIGALRM, &sa, NULL) == -1) {
+    perror ("sigaction() fails: ");
+  }
+
+  // init block_set signal mask: blocks some signals
   sigset_t block_set;
   sigemptyset(&block_set);
-  sigdelset(&block_set, SIGALRM);
+  sigaddset(&block_set, SIGALRM);
   sigprocmask (SIG_BLOCK, &block_set, NULL);
-    // Defer signal processing to select() block
+    // Defer signal handling to select() block
     // Signal blocking is actually signal deferrment.
 
-  // init empty_set signal mask
+  // init empty_set signal mask: blocks nothing
   sigset_t empty_set;
   sigemptyset(&empty_set);
 
@@ -64,35 +114,41 @@ int main (void) {
     perror ("Listen error in server!");
     exit(1);
   }
-  
-  
+
+
   fd_set readset;
   char string[BUFSIZE];  
   int active;
+  int return_val;
   FD_ZERO(&saveset);
   FD_SET(passive, &saveset);
+  memset (sock_timeouts, 0, sizeof(sock_timeouts));
   while(1) {
     memcpy (&readset, &saveset, sizeof(fd_set));
-    pselect (
-      FD_SETSIZE,  // nfds, number of file descriptors
-      &readset,    // readfds
-      NULL,        // writefds
-      NULL,        // exceptfds, almost never used
-      NULL,        // struct timeval *timeout, NULL for always block
-      &empty_set   // sigmask, allow signal processing during select
-    );
+    return_val =
+      pselect (
+        FD_SETSIZE,  // nfds, number of file descriptors
+        &readset,    // readfds
+        NULL,        // writefds
+        NULL,        // exceptfds, almost never used
+        NULL,        // struct timeval *timeout, NULL for always block
+        &empty_set   // sigmask, allow signal processing during select
+      );
+    if (return_val == -1 && errno == EINTR) {
+      // signal handling has interrupted pselect()
+      continue;
+    }
     if (FD_ISSET(passive, &readset)) {
       active = accept(passive, NULL, NULL);
         // will not block because accept has data
+      printf ("accept() returns %d\n", active);
       FD_SET(active, &saveset);
-      printf ("adding socket %d\n", active);
 
       /*
        * set no linger
        * onoff=1 and ling=0:
        *   The connection is aborted on close,
        *   and all data queued for sending is discarded.
-       * 
        */
       struct linger stay;
       stay.l_onoff  = 1;
@@ -111,6 +167,7 @@ int main (void) {
       }
     }
     
+    int now = time(NULL);
     for (readsock = passive +1; readsock < FD_SETSIZE ; readsock++) {
       
       if (!FD_ISSET(readsock, &readset)) {
@@ -124,12 +181,14 @@ int main (void) {
         exit(1);
       }
       string[strcspn(string, "\r\n")] = '\0';  // chomp
+      sock_timeouts[readsock] = now + TIMEOUT;
 
       if ( nread == 0  // disconnected socket
         || strcmp(string, "quit") == 0) // user quitting
       {
         FD_CLR (readsock, &saveset);
         close(readsock);
+        sock_timeouts[readsock] = 0;
         printf ("closing %d\n", readsock);
         continue;
       }
@@ -160,8 +219,33 @@ int main (void) {
           exit(1);
         }
       }
+
+      // set up alarm(), which will cause SIGALRM
+      int fd = 0;
+      int min_timeout = 0;
+      for (fd=0;fd<FD_SETSIZE;fd++) {
+        int timeout = sock_timeouts[fd];
+        if (timeout == 0) {
+          continue;
+        }
+        printf ("sock_timeouts[%d]: %d\n", fd, timeout);
+        if (min_timeout == 0) {
+          min_timeout = timeout;
+          continue;
+        }
+        if (timeout < min_timeout) {
+          min_timeout = timeout;
+        }
+      }
+      if (min_timeout) {
+        int future = min_timeout - now;
+        future = future < 1 ? 1 : future;
+        printf ("alarm(%d)\n", future);
+        alarm(future);
+      }
     }
   }
- 
+
   return 0;
 }
+
