@@ -20,47 +20,27 @@
 #define TIMEOUT 10
   // 10 second timeout
 
+/*
+ * prototypes
+ * ------------
+ */
+void sig_alarm_handler (int signum);
+void start_end_alarm (int *sock_expiry);
+
+/*
+ * globals
+ * --------
+ */
 int readsock;
 sigjmp_buf env;
 fd_set saveset;
 int sock_expiry[MAX_FD];
 
-void sig_alarm_handler (int signum) {
-  int now = time(NULL);
-  int min_expiry = 0;
-  for (int fd=0;fd<MAX_FD;fd++) {
-    int expiry = sock_expiry[fd];
-    if (expiry == 0) {
-      continue;
-    }
-    printf ("sig_alarm_handler: %d <= %d\n", expiry, now);
-    if (expiry <= now) {
-      printf ("time out socket %d\n",fd);
 
-      sock_expiry[fd] = 0;
-      FD_CLR (fd, &saveset);
-      close (fd);
-      continue;
-    }
-    if (min_expiry == 0) {
-      min_expiry = expiry;
-      printf ("sig_handler: min_expiry = %d\n", min_expiry);
-      continue;
-    }
-    if (expiry < min_expiry) {
-      min_expiry = expiry;
-      printf ("sig_handler: min_expiry = %d\n", min_expiry);
-    }
-  }
-
-  if (min_expiry) {
-    int future = min_expiry - now;
-    future = future < 1 ? 1 : future;
-    printf ("sig_handler alarm(%d)\n", future);
-    alarm (future);
-  }
-}
-
+/*
+ * code begins
+ * -------------
+ */
 int main (void) {
   // SIGALRM setup
   struct sigaction sa;
@@ -115,7 +95,6 @@ int main (void) {
     exit(1);
   }
 
-
   fd_set readset;
   char string[BUFSIZE];  
   int connfd;
@@ -138,11 +117,15 @@ int main (void) {
       // signal handling has interrupted pselect()
       continue;
     }
+
+    // incoming connection
+    int now = time(NULL);
     if (FD_ISSET(listenfd, &readset)) {
       connfd = accept(listenfd, NULL, NULL);
         // will not block because accept has data
-      printf ("accept() returns %d\n", connfd);
+      printf ("connection from socket %d\n", connfd);
       FD_SET(connfd, &saveset);
+      sock_expiry[connfd] = now + TIMEOUT;
 
       /*
        * set no linger
@@ -167,7 +150,7 @@ int main (void) {
       }
     }
     
-    int now = time(NULL);
+    // existing connections
     for (readsock = listenfd +1; readsock < MAX_FD ; readsock++) {
       
       if (!FD_ISSET(readsock, &readset)) {
@@ -220,32 +203,55 @@ int main (void) {
         }
       }
 
-      // set up alarm(), which will cause SIGALRM
-      int fd = 0;
-      int min_timeout = 0;
-      for (fd=0;fd<MAX_FD;fd++) {
-        int timeout = sock_expiry[fd];
-        if (timeout == 0) {
-          continue;
-        }
-        printf ("sock_expiry[%d]: %d\n", fd, timeout);
-        if (min_timeout == 0) {
-          min_timeout = timeout;
-          continue;
-        }
-        if (timeout < min_timeout) {
-          min_timeout = timeout;
-        }
-      }
-      if (min_timeout) {
-        int future = min_timeout - now;
-        future = future < 1 ? 1 : future;
-        printf ("alarm(%d)\n", future);
-        alarm(future);
-      }
-    }
-  }
+    }//for loop for existing connections
+
+    start_end_alarm(sock_expiry);
+
+  }//while(1)
 
   return 0;
 }
+
+void sig_alarm_handler (int signum) {
+  start_end_alarm (sock_expiry);
+}
+
+// start alarms and close timed-out sockets
+void start_end_alarm (int *sock_expiry) {
+  int now = time(NULL);
+  int min_expiry = 0;
+  for (int fd=0;fd<MAX_FD;fd++) {
+    int expiry = sock_expiry[fd];
+    if (expiry == 0) {
+      continue;
+    }
+    // printf ("sig_alarm_handler: %d <= %d\n", expiry, now);
+    if (expiry <= now) {
+      printf ("time out socket %d\n",fd);
+
+      sock_expiry[fd] = 0;
+      FD_CLR (fd, &saveset);
+      close (fd);
+      continue;
+    }
+    if (min_expiry == 0) {
+      min_expiry = expiry;
+      // printf ("sig_handler: min_expiry = %d\n", min_expiry);
+      continue;
+    }
+    if (expiry < min_expiry) {
+      min_expiry = expiry;
+      // printf ("sig_handler: min_expiry = %d\n", min_expiry);
+    }
+  }
+
+  if (min_expiry) {
+    int future = min_expiry - now;
+    future = future < 1 ? 1 : future;
+    // printf ("sig_handler alarm(%d)\n", future);
+    alarm (future);
+  }
+}
+
+
 
