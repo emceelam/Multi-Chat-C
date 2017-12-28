@@ -15,6 +15,7 @@
 #include <errno.h>
 
 #define PORT 4021
+#define MAX_FD FD_SETSIZE
 #define BUFSIZE 50
 #define TIMEOUT 10
   // 10 second timeout
@@ -22,39 +23,38 @@
 int readsock;
 sigjmp_buf env;
 fd_set saveset;
-int sock_timeouts[FD_SETSIZE];
-
+int sock_expiry[MAX_FD];
 
 void sig_alarm_handler (int signum) {
   int now = time(NULL);
-  int min_timeout = 0;
-  for (int fd=0;fd<FD_SETSIZE;fd++) {
-    int timeout = sock_timeouts[fd];
-    if (timeout == 0) {
+  int min_expiry = 0;
+  for (int fd=0;fd<MAX_FD;fd++) {
+    int expiry = sock_expiry[fd];
+    if (expiry == 0) {
       continue;
     }
-    printf ("sig_alarm_handler: %d <= %d\n", timeout, now);
-    if (timeout <= now) {
+    printf ("sig_alarm_handler: %d <= %d\n", expiry, now);
+    if (expiry <= now) {
       printf ("time out socket %d\n",fd);
 
-      sock_timeouts[fd] = 0;
+      sock_expiry[fd] = 0;
       FD_CLR (fd, &saveset);
       close (fd);
       continue;
     }
-    if (min_timeout == 0) {
-      min_timeout = timeout;
-      printf ("sig_handler: min_timeout = %d\n", min_timeout);
+    if (min_expiry == 0) {
+      min_expiry = expiry;
+      printf ("sig_handler: min_expiry = %d\n", min_expiry);
       continue;
     }
-    if (timeout < min_timeout) {
-      min_timeout = timeout;
-      printf ("sig_handler: min_timeout = %d\n", min_timeout);
+    if (expiry < min_expiry) {
+      min_expiry = expiry;
+      printf ("sig_handler: min_expiry = %d\n", min_expiry);
     }
   }
 
-  if (min_timeout) {
-    int future = min_timeout - now;
+  if (min_expiry) {
+    int future = min_expiry - now;
     future = future < 1 ? 1 : future;
     printf ("sig_handler alarm(%d)\n", future);
     alarm (future);
@@ -83,34 +83,34 @@ int main (void) {
   sigset_t empty_set;
   sigemptyset(&empty_set);
 
-  // set up passive socket
-  int passive;
+  // set up listenfd socket
+  int listenfd;
   struct sockaddr_in sin;
   sin.sin_family = AF_INET;
   sin.sin_port = htons(4021);
   sin.sin_addr.s_addr = htonl(INADDR_ANY);
-  passive = socket(AF_INET, SOCK_STREAM, 0);
-  if (passive < 0) {
+  listenfd = socket(AF_INET, SOCK_STREAM, 0);
+  if (listenfd < 0) {
     perror ("socket() failed");
     exit(1);
   }
-  printf ("passive sock %d\n", passive);
+  printf ("listenfd sock %d\n", listenfd);
 
   // avoid address in use error
   // linux doesn't close out sockets immediately on program termination
   // we want to reuse if we detect if same socket has not closed.
   int on = 1;
-  if (setsockopt (passive, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0) {
+  if (setsockopt (listenfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0) {
     perror("setsockopt() fails");
     exit(1);
   }
   
-  if (bind(passive, (struct sockaddr *) &sin, sizeof(sin)) < 0) {
+  if (bind(listenfd, (struct sockaddr *) &sin, sizeof(sin)) < 0) {
     perror ("Binding error in server!");
     exit(1);
   }
   int backlog = 5;   // max length of queue of pending connections.
-  if (listen(passive, backlog) < 0) {
+  if (listen(listenfd, backlog) < 0) {
     perror ("Listen error in server!");
     exit(1);
   }
@@ -118,16 +118,16 @@ int main (void) {
 
   fd_set readset;
   char string[BUFSIZE];  
-  int active;
+  int connfd;
   int return_val;
   FD_ZERO(&saveset);
-  FD_SET(passive, &saveset);
-  memset (sock_timeouts, 0, sizeof(sock_timeouts));
+  FD_SET(listenfd, &saveset);
+  memset (sock_expiry, 0, sizeof(sock_expiry));
   while(1) {
     memcpy (&readset, &saveset, sizeof(fd_set));
     return_val =
       pselect (
-        FD_SETSIZE,  // nfds, number of file descriptors
+        MAX_FD,      // nfds, number of file descriptors
         &readset,    // readfds
         NULL,        // writefds
         NULL,        // exceptfds, almost never used
@@ -138,11 +138,11 @@ int main (void) {
       // signal handling has interrupted pselect()
       continue;
     }
-    if (FD_ISSET(passive, &readset)) {
-      active = accept(passive, NULL, NULL);
+    if (FD_ISSET(listenfd, &readset)) {
+      connfd = accept(listenfd, NULL, NULL);
         // will not block because accept has data
-      printf ("accept() returns %d\n", active);
-      FD_SET(active, &saveset);
+      printf ("accept() returns %d\n", connfd);
+      FD_SET(connfd, &saveset);
 
       /*
        * set no linger
@@ -153,22 +153,22 @@ int main (void) {
       struct linger stay;
       stay.l_onoff  = 1;
       stay.l_linger = 0;
-      setsockopt(active, SOL_SOCKET, SO_LINGER, &stay, sizeof(struct linger));
+      setsockopt(connfd, SOL_SOCKET, SO_LINGER, &stay, sizeof(struct linger));
 
-      // set active to be non-blocking socket
+      // set connfd to be non-blocking socket
       int val;
-      val = fcntl(active, F_GETFL, 0);
+      val = fcntl(connfd, F_GETFL, 0);
       if (val < 0) {
         perror ("fcntl(F_GETFL) failed");
       }
-      val = fcntl(active, F_SETFL, val | O_NONBLOCK);
+      val = fcntl(connfd, F_SETFL, val | O_NONBLOCK);
       if (val < 0) {
         perror ("fcntl(F_SETFL) failed");
       }
     }
     
     int now = time(NULL);
-    for (readsock = passive +1; readsock < FD_SETSIZE ; readsock++) {
+    for (readsock = listenfd +1; readsock < MAX_FD ; readsock++) {
       
       if (!FD_ISSET(readsock, &readset)) {
         continue;
@@ -181,14 +181,14 @@ int main (void) {
         exit(1);
       }
       string[strcspn(string, "\r\n")] = '\0';  // chomp
-      sock_timeouts[readsock] = now + TIMEOUT;
+      sock_expiry[readsock] = now + TIMEOUT;
 
       if ( nread == 0  // disconnected socket
         || strcmp(string, "quit") == 0) // user quitting
       {
         FD_CLR (readsock, &saveset);
         close(readsock);
-        sock_timeouts[readsock] = 0;
+        sock_expiry[readsock] = 0;
         printf ("closing %d\n", readsock);
         continue;
       }
@@ -204,9 +204,9 @@ int main (void) {
       memcpy (&writeset, &saveset, sizeof(fd_set));
       timeout.tv_sec  = 0;
       timeout.tv_usec = 0;
-      select (FD_SETSIZE, NULL, &writeset, NULL, &timeout);  
+      select (MAX_FD, NULL, &writeset, NULL, &timeout);  
         // which sockets can we write to
-      for (writesock = passive +1; writesock < FD_SETSIZE; writesock++) {
+      for (writesock = listenfd +1; writesock < MAX_FD; writesock++) {
         if (  writesock == readsock   // don't echo to originator 
           || !FD_ISSET(writesock, &writeset))
         {
@@ -223,12 +223,12 @@ int main (void) {
       // set up alarm(), which will cause SIGALRM
       int fd = 0;
       int min_timeout = 0;
-      for (fd=0;fd<FD_SETSIZE;fd++) {
-        int timeout = sock_timeouts[fd];
+      for (fd=0;fd<MAX_FD;fd++) {
+        int timeout = sock_expiry[fd];
         if (timeout == 0) {
           continue;
         }
-        printf ("sock_timeouts[%d]: %d\n", fd, timeout);
+        printf ("sock_expiry[%d]: %d\n", fd, timeout);
         if (min_timeout == 0) {
           min_timeout = timeout;
           continue;
