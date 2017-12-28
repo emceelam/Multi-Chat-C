@@ -16,9 +16,9 @@
 
 #define PORT 4021
 #define MAX_FD FD_SETSIZE
-#define BUFSIZE 50
-#define TIMEOUT 10
-  // 10 second timeout
+#define CHAT_SIZE 50
+#define TIME_OUT 10
+  // 10 second time out
 
 /*
  * prototypes
@@ -96,7 +96,7 @@ int main (void) {
   }
 
   fd_set readset;
-  char string[BUFSIZE];  
+  char chat[CHAT_SIZE];
   int connfd;
   int return_val;
   FD_ZERO(&saveset);
@@ -125,7 +125,7 @@ int main (void) {
         // will not block because accept has data
       printf ("connection from socket %d\n", connfd);
       FD_SET(connfd, &saveset);
-      sock_expiry[connfd] = now + TIMEOUT;
+      sock_expiry[connfd] = now + TIME_OUT;
 
       /*
        * set no linger
@@ -157,17 +157,17 @@ int main (void) {
         continue;
       }
 
-      memset (string, 0, BUFSIZE);
-      int nread = read (readsock, string, BUFSIZE);
+      memset (chat, 0, CHAT_SIZE);
+      int nread = read (readsock, chat, CHAT_SIZE);
       if (nread < 0) {
         perror ("read() failed");
         exit(1);
       }
-      string[strcspn(string, "\r\n")] = '\0';  // chomp
-      sock_expiry[readsock] = now + TIMEOUT;
+      chat[strcspn(chat, "\r\n")] = '\0';  // chomp
+      sock_expiry[readsock] = now + TIME_OUT;
 
       if ( nread == 0  // disconnected socket
-        || strcmp(string, "quit") == 0) // user quitting
+        || strcmp(chat, "quit") == 0) // user quitting
       {
         FD_CLR (readsock, &saveset);
         close(readsock);
@@ -175,19 +175,19 @@ int main (void) {
         printf ("closing %d\n", readsock);
         continue;
       }
-      if (strlen(string) == 0) {
+      if (strlen(chat) == 0) {
         continue;  // nothing to do
       }
-      printf ("read %d: '%s'\n", readsock, string);
+      printf ("read %d: '%s'\n", readsock, chat);
       
-      // write string to all other clients
+      // write chat to all other clients
       int writesock;
-      struct timeval timeout;
+      struct timeval tv;
       fd_set writeset;
       memcpy (&writeset, &saveset, sizeof(fd_set));
-      timeout.tv_sec  = 0;
-      timeout.tv_usec = 0;
-      select (MAX_FD, NULL, &writeset, NULL, &timeout);  
+      tv.tv_sec  = 0;
+      tv.tv_usec = 0;
+      select (MAX_FD, NULL, &writeset, NULL, &tv);
         // which sockets can we write to
       for (writesock = listenfd +1; writesock < MAX_FD; writesock++) {
         if (  writesock == readsock   // don't echo to originator 
@@ -196,8 +196,8 @@ int main (void) {
           continue;
         }
 
-        printf ("write %d: %s\n", writesock, string);
-        if (write (writesock, string, BUFSIZE) < 0) {
+        printf ("write %d: %s\n", writesock, chat);
+        if (write (writesock, chat, CHAT_SIZE) < 0) {
           perror ("write() failed");
           exit(1);
         }
