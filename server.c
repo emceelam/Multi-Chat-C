@@ -102,6 +102,8 @@ int main (void) {
     exit(1);
   }
 
+  // main loop
+  // block for incoming socket communications
   fd_set readset;
   char chat[CHAT_SIZE];
   int connfd;
