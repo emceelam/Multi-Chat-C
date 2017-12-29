@@ -25,14 +25,12 @@
  * ------------
  */
 void sig_alarm_handler (int signum);
-void start_end_alarm (int *sock_expiry);
+void start_end_alarm (int *sock_expiry, fd_set *saveset);
 
 /*
  * globals
  * --------
  */
-int readsock;
-sigjmp_buf env;
 fd_set saveset;
 int sock_expiry[MAX_FD];
 
@@ -42,6 +40,13 @@ int sock_expiry[MAX_FD];
  * -------------
  */
 int main (void) {
+  printf ("Multi client chat server, using telnet, programmed in C.\n");
+  printf ("Everything typed by one chat user will be copied to other chat users.\n");
+  printf ("To connect:\n");
+  printf ("    telnet 127.0.0.1 %d\n", PORT);
+  printf ("\n");
+  printf ("Typing 'quit' on telnet sessions will disconnect.\n");
+
   // SIGALRM setup
   struct sigaction sa;
   sigfillset (&sa.sa_mask);
@@ -62,6 +67,8 @@ int main (void) {
   // init empty_set signal mask: blocks nothing
   sigset_t empty_set;
   sigemptyset(&empty_set);
+  sigaddset(&empty_set, SIGUSR2); // no we don't use SIGUSR2
+    // pselect() needs a non-NULL signal set. Otherwise signal set is ignored.
 
   // set up listenfd socket
   int listenfd;
@@ -74,7 +81,7 @@ int main (void) {
     perror ("socket() failed");
     exit(1);
   }
-  printf ("listenfd sock %d\n", listenfd);
+  printf ("Listening on socket %d for client connections\n", listenfd);
 
   // avoid address in use error
   // linux doesn't close out sockets immediately on program termination
@@ -123,7 +130,7 @@ int main (void) {
     if (FD_ISSET(listenfd, &readset)) {
       connfd = accept(listenfd, NULL, NULL);
         // will not block because accept has data
-      printf ("connection from socket %d\n", connfd);
+      printf ("Connection from socket %d\n", connfd);
       FD_SET(connfd, &saveset);
       sock_expiry[connfd] = now + TIME_OUT;
 
@@ -151,6 +158,7 @@ int main (void) {
     }
     
     // existing connections
+    int readsock;
     for (readsock = listenfd +1; readsock < MAX_FD ; readsock++) {
       
       if (!FD_ISSET(readsock, &readset)) {
@@ -160,7 +168,8 @@ int main (void) {
       memset (chat, 0, CHAT_SIZE);
       int nread = read (readsock, chat, CHAT_SIZE);
       if (nread < 0) {
-        perror ("read() failed");
+        fprintf (stderr,
+          "read() failed on sock %d: %s\n", readsock, strerror(errno));
         exit(1);
       }
       chat[strcspn(chat, "\r\n")] = '\0';  // chomp
@@ -172,16 +181,17 @@ int main (void) {
         FD_CLR (readsock, &saveset);
         close(readsock);
         sock_expiry[readsock] = 0;
-        printf ("closing %d\n", readsock);
+        printf ("Quit from socket %d\n", readsock);
         continue;
       }
       if (strlen(chat) == 0) {
         continue;  // nothing to do
       }
-      printf ("read %d: '%s'\n", readsock, chat);
+      printf ("Read socket %d: '%s'\n", readsock, chat);
       
       // write chat to all other clients
       int writesock;
+      int writecnt = 0;
       struct timeval tv;
       fd_set writeset;
       memcpy (&writeset, &saveset, sizeof(fd_set));
@@ -196,16 +206,21 @@ int main (void) {
           continue;
         }
 
-        printf ("write %d: %s\n", writesock, chat);
+        printf ("Write socket %d: %s\n", writesock, chat);
+        writecnt++;
         if (write (writesock, chat, CHAT_SIZE) < 0) {
-          perror ("write() failed");
+          fprintf (stderr,
+            "write() failed on sock %d: %s\n", writesock, strerror(errno));
           exit(1);
         }
+      }
+      if (!writecnt) {
+        printf ("No other telnet sessions. Message not copied: '%s'\n", chat);
       }
 
     }//for loop for existing connections
 
-    start_end_alarm(sock_expiry);
+    start_end_alarm(sock_expiry, &saveset);
 
   }//while(1)
 
@@ -213,11 +228,11 @@ int main (void) {
 }
 
 void sig_alarm_handler (int signum) {
-  start_end_alarm (sock_expiry);
+  start_end_alarm (sock_expiry, &saveset);
 }
 
 // start alarms and close timed-out sockets
-void start_end_alarm (int *sock_expiry) {
+void start_end_alarm (int *sock_expiry, fd_set *saveset) {
   int now = time(NULL);
   int min_expiry = 0;
   for (int fd=0;fd<MAX_FD;fd++) {
@@ -227,10 +242,11 @@ void start_end_alarm (int *sock_expiry) {
     }
     // printf ("sig_alarm_handler: %d <= %d\n", expiry, now);
     if (expiry <= now) {
-      printf ("time out socket %d\n",fd);
+      printf ("Time out socket %d. Inactivity of %d sec. Closing socket.\n",
+              fd, TIME_OUT);
 
       sock_expiry[fd] = 0;
-      FD_CLR (fd, &saveset);
+      FD_CLR (fd, saveset);
       close (fd);
       continue;
     }
