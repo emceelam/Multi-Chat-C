@@ -1,28 +1,27 @@
 # NAME
 
-multi_chat - A socket-based multi-client chat
+multi_chat_c - A socket-based multi-client chat written with C code
 
 # SYNOPSIS
 
-open terminal
+Open terminal
 
     make all
     ./server
 
-from other terminal
+From other terminal
 
     telnet 127.0.0.1 4021
 
-from yet another terminal
+From yet another terminal
 
     telnet 127.0.0.1 4021
 
-start typing text in your telnet sessions
+Start typing text in your telnet sessions. Typing "quit" will cause the connection to terminate. Typing nothing for 10 seconds will cause connection to terminate.
 
 # DESCRIPTION
 
-This is a socket-based multi-client chat that echoes one user's chat
-to other user's chat telnet sessions.
+This is a socket-based multi-client chat that echoes one user's chat to other user's chat telnet sessions.
 
 # FEATURES
 
@@ -37,6 +36,7 @@ to other user's chat telnet sessions.
 # AUTHOR
 
 Lambert Lum
+
 ![email address](http://sjsutech.com/small_email.png)
 
 # COPYRIGHT AND LICENSE
