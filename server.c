@@ -72,33 +72,34 @@ int main (void) {
 
   // set up listenfd socket
   int listenfd;
-  struct sockaddr_in sin;
-  sin.sin_family = AF_INET;
-  sin.sin_port = htons(4021);
-  sin.sin_addr.s_addr = htonl(INADDR_ANY);
   listenfd = socket(AF_INET, SOCK_STREAM, 0);
   if (listenfd < 0) {
     perror ("socket() failed");
     exit(1);
   }
-  printf ("Listening on socket %d for client connections\n", listenfd);
 
-  // avoid address in use error
-  // linux doesn't close out sockets immediately on program termination
-  // we want to reuse if we detect if same socket has not closed.
-  int on = 1;
-  if (setsockopt (listenfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0) {
-    perror("setsockopt() fails");
-    exit(1);
-  }
-  
+  // bind
+  struct sockaddr_in sin;
+  sin.sin_family = AF_INET;
+  sin.sin_port = htons(PORT);
+  sin.sin_addr.s_addr = htonl(INADDR_ANY);
   if (bind(listenfd, (struct sockaddr *) &sin, sizeof(sin)) < 0) {
     perror ("Binding error in server!");
     exit(1);
   }
+
+  // listen
   int backlog = 5;   // max length of queue of pending connections.
   if (listen(listenfd, backlog) < 0) {
     perror ("Listen error in server!");
+    exit(1);
+  }
+  printf ("Listening on socket %d for client connections\n", listenfd);
+
+  // only has meaning if children are still using same port as parent.
+  int on = 1;
+  if (setsockopt (listenfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0) {
+    perror("setsockopt() fails");
     exit(1);
   }
 
