@@ -41,10 +41,10 @@ int sock_expiry[MAX_FD];
  */
 int main (void) {
   printf ("Multi client chat server, using telnet, programmed in C.\n");
-  printf ("Everything typed by one chat user will be copied to other chat users.\n");
   printf ("To connect:\n");
   printf ("    telnet 127.0.0.1 %d\n", PORT);
   printf ("\n");
+  printf ("Everything typed by one chat user will be copied to other chat users.\n");
   printf ("Typing 'quit' on telnet sessions will disconnect.\n");
 
   // SIGALRM setup
@@ -78,6 +78,21 @@ int main (void) {
     exit(1);
   }
 
+  // SO_REUSEADDR
+  //   l
+  // Unix Network Programming, p103.
+  //   A common error from bind is EADDRINUSE
+  // Unix Network Programming, p203.
+  //   SO_REUSEADDR socket option should always be used in the server
+  //   before the call to bind
+  // Unix Network Programming, p210
+  //   All TCP servers should specify this socket option
+  int on = 1;
+  if (setsockopt (listenfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0) {
+    perror("setsockopt() fails");
+    exit(1);
+  }
+
   // bind
   struct sockaddr_in sin;
   sin.sin_family = AF_INET;
@@ -95,13 +110,6 @@ int main (void) {
     exit(1);
   }
   printf ("Listening on socket %d for client connections\n", listenfd);
-
-  // only has meaning if children are still using same port as parent.
-  int on = 1;
-  if (setsockopt (listenfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0) {
-    perror("setsockopt() fails");
-    exit(1);
-  }
 
   // main loop
   // block for incoming socket communications
