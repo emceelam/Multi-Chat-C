@@ -139,7 +139,12 @@ int main (void) {
     // incoming connection
     int now = time(NULL);
     if (FD_ISSET(listenfd, &readset)) {
-      connfd = accept(listenfd, NULL, NULL);
+
+      connfd = accept(
+        listenfd,  // listenfd accepts connections
+        NULL,      // client sockaddr information, NULL to ignore
+        NULL       // length of client sockaddr, NULL to ignore
+      );
         // will not block because accept has data
       printf ("Connection from socket %d\n", connfd);
       FD_SET(connfd, &saveset);
