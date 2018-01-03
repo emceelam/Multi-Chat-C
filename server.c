@@ -155,6 +155,11 @@ int main (void) {
        * onoff=1 and ling=0:
        *   The connection is aborted on close,
        *   and all data queued for sending is discarded.
+       *
+       *  struct linger {
+       *       int l_linger;   // how many seconds to linger for
+       *       int l_onoff;    // linger active
+       *   };
        */
       struct linger stay;
       stay.l_onoff  = 1;
