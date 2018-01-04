@@ -177,11 +177,11 @@ int main (void) {
         perror ("fcntl(F_SETFL) failed");
       }
     }
-    
+
     // existing connections
     int readsock;
     for (readsock = listenfd +1; readsock < MAX_FD ; readsock++) {
-      
+
       if (!FD_ISSET(readsock, &readset)) {
         continue;
       }
