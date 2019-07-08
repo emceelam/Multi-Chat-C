@@ -68,11 +68,16 @@ int main (void) {
   sigset_t empty_set;
   sigemptyset(&empty_set);
   sigaddset(&empty_set, SIGUSR2); // no we don't use SIGUSR2
-    // pselect() needs a non-NULL signal set. Otherwise signal set is ignored.
+    // pselect() needs a non-NULL signal set.
+    // Otherwise signal set is ignored.
 
-  // set up listenfd socket
+  // create listenfd socket
   int listenfd;
-  listenfd = socket(AF_INET, SOCK_STREAM, 0);
+  listenfd = socket(
+    AF_INET,     // IPV4
+    SOCK_STREAM, // reliable, connection-oriented, two-way communication
+    0            // default
+  );
   if (listenfd < 0) {
     perror ("socket() failed");
     exit(1);
@@ -121,7 +126,16 @@ int main (void) {
   FD_SET(listenfd, &saveset);
   memset (sock_expiry, 0, sizeof(sock_expiry));
   while(1) {
-    memcpy (&readset, &saveset, sizeof(fd_set));
+    memcpy (
+      &readset,       // dest
+      &saveset,       // source
+      sizeof(fd_set)  // 128
+    );
+
+    // pselect()
+    // Monitor multiple file descriptors,
+    // waiting until one or more of the file descriptors become "ready"
+    // pselect() has a sigmask parameter that is lacking in regular select().
     return_val =
       pselect (
         MAX_FD,      // nfds, number of file descriptors
@@ -145,7 +159,8 @@ int main (void) {
         NULL,      // client sockaddr information, NULL to ignore
         NULL       // length of client sockaddr, NULL to ignore
       );
-        // will not block because accept has data
+      // will not block because accept() has data
+
       printf ("Connection from socket %d\n", connfd);
       FD_SET(connfd, &saveset);
       sock_expiry[connfd] = now + TIME_OUT;
@@ -168,11 +183,11 @@ int main (void) {
 
       // set connfd to be non-blocking socket
       int val;
-      val = fcntl(connfd, F_GETFL, 0);
+      val = fcntl(connfd, F_GETFL, 0);  // get flags
       if (val < 0) {
         perror ("fcntl(F_GETFL) failed");
       }
-      val = fcntl(connfd, F_SETFL, val | O_NONBLOCK);
+      val = fcntl(connfd, F_SETFL, val | O_NONBLOCK);  // set flags
       if (val < 0) {
         perror ("fcntl(F_SETFL) failed");
       }
@@ -282,6 +297,7 @@ void start_end_alarm (int *sock_expiry, fd_set *saveset) {
     }
   }
 
+  // setting the alarm to the smallest expiration of the multiple sockets we are tracking
   if (min_expiry) {
     int future = min_expiry - now;
     future = future < 1 ? 1 : future;
