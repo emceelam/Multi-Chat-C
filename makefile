@@ -8,10 +8,14 @@
 CFLAGS := -O2 -Wall -pedantic
 INCLUDES := -I.
 
-all:  server
+all:  server sigalrm
 
 server: server.c
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^
 
-clean: 
-	$(RM) server
+sigalrm: sigalrm.c
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^
+
+clean:
+	$(RM) server sigalrm
+
