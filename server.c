@@ -15,24 +15,28 @@
 #include <errno.h>
 
 #define PORT 4021
-#define MAX_FD FD_SETSIZE
 #define CHAT_SIZE 50
-#define TIME_OUT 10
-  // 10 second time out
+#define TIME_OUT 10   // 10 second time out of sockets
+#define SOCK_EXPIRY_MAX 128
+  // This number is a hack.
+  // We need to replace SOCK_EXPIRY_MAX with a more sensible measurement of upper bound
 
 /*
  * prototypes
  * ------------
  */
 void sig_alarm_handler (int signum);
-void start_end_alarm (int *sock_expiry, fd_set *saveset);
+void start_end_alarm (int *sock_expiry, fd_set *saveset, int max_fd);
+int max (int int1, int int2);
 
 /*
  * globals
  * --------
+ * required to be globals because of signal handler function's immutable parameter list
  */
 fd_set saveset;
-int sock_expiry[MAX_FD];
+int sock_expiry[SOCK_EXPIRY_MAX];
+int max_fd = 0;
 
 
 /*
@@ -124,6 +128,7 @@ int main (void) {
   int return_val;
   FD_ZERO(&saveset);
   FD_SET(listenfd, &saveset);
+  max_fd = max(max_fd, listenfd);
   memset (sock_expiry, 0, sizeof(sock_expiry));
   while(1) {
     memcpy (
@@ -138,7 +143,7 @@ int main (void) {
     // pselect() has a sigmask parameter that is lacking in regular select().
     return_val =
       pselect (
-        MAX_FD,      // nfds, number of file descriptors
+        max_fd +1,   // nfds, number of file descriptors
         &readset,    // readfds
         NULL,        // writefds
         NULL,        // exceptfds, almost never used
@@ -164,6 +169,7 @@ int main (void) {
       printf ("Connection from socket %d\n", connfd);
       FD_SET(connfd, &saveset);
       sock_expiry[connfd] = now + TIME_OUT;
+      max_fd = max(max_fd, connfd);
 
       /*
        * set no linger
@@ -195,7 +201,7 @@ int main (void) {
 
     // existing connections
     int readsock;
-    for (readsock = listenfd +1; readsock < MAX_FD ; readsock++) {
+    for (readsock = listenfd +1; readsock <= max_fd ; readsock++) {
 
       if (!FD_ISSET(readsock, &readset)) {
         continue;
@@ -224,7 +230,7 @@ int main (void) {
         continue;  // nothing to do
       }
       printf ("Read socket %d: '%s'\n", readsock, chat);
-      
+
       // write chat to all other clients
       int writesock;
       int writecnt = 0;
@@ -233,9 +239,9 @@ int main (void) {
       memcpy (&writeset, &saveset, sizeof(fd_set));
       tv.tv_sec  = 0;
       tv.tv_usec = 0;
-      select (MAX_FD, NULL, &writeset, NULL, &tv);
+      select (max_fd +1, NULL, &writeset, NULL, &tv);
         // which sockets can we write to
-      for (writesock = listenfd +1; writesock < MAX_FD; writesock++) {
+      for (writesock = listenfd +1; writesock <= max_fd; writesock++) {
         if (  writesock == readsock   // don't echo to originator 
           || !FD_ISSET(writesock, &writeset))
         {
@@ -256,7 +262,7 @@ int main (void) {
 
     }//for loop for existing connections
 
-    start_end_alarm(sock_expiry, &saveset);
+    start_end_alarm(sock_expiry, &saveset, max_fd);
 
   }//while(1)
 
@@ -264,14 +270,14 @@ int main (void) {
 }
 
 void sig_alarm_handler (int signum) {
-  start_end_alarm (sock_expiry, &saveset);
+  start_end_alarm (sock_expiry, &saveset, max_fd);
 }
 
 // start alarms and close timed-out sockets
-void start_end_alarm (int *sock_expiry, fd_set *saveset) {
+void start_end_alarm (int *sock_expiry, fd_set *saveset, int max_fd) {
   int now = time(NULL);
   int min_expiry = 0;
-  for (int fd=0;fd<MAX_FD;fd++) {
+  for (int fd=0;fd<=max_fd;fd++) {
     int expiry = sock_expiry[fd];
     if (expiry == 0) {
       continue;
@@ -306,5 +312,7 @@ void start_end_alarm (int *sock_expiry, fd_set *saveset) {
   }
 }
 
-
+int max (int int1, int int2) {
+    return int1 >= int2 ? int1 : int2;
+}
 
