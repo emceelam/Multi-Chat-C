@@ -22,6 +22,9 @@ telnet 127.0.0.1 4020
 # from another terminal
 telnet 127.0.0.1 4020
 
+# from yet another terminal
+telnet 127.0.0.1 4020
+
 # if you want to look inside
 docker exec --interactive --tty multi_chat_c /bin/sh
 
@@ -33,3 +36,10 @@ docker container run \
   --name multi_chat_c-4021 \
   --publish 127.0.0.1:4021:4020 \
   multi_chat_c:latest
+
+
+# from one terminal
+telnet 127.0.0.1 4021
+
+# from another terminal
+telnet 127.0.0.1 4021
