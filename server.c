@@ -14,7 +14,7 @@
 #include <time.h>
 #include <errno.h>
 
-#define PORT 4021
+#define PORT 4020
 #define CHAT_SIZE 50
 #define TIME_OUT 10   // 10 second time out of sockets
 #define SOCK_EXPIRY_MAX 128
