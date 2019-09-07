@@ -32,6 +32,7 @@ This is a socket-based multi-client chat that echoes one user's chat to other us
     * signal handling (SIGALRM)
     * sigprocmask()
     * sigaction()
+* [Docker instructions](docker.md)
 
 # AUTHOR
 
