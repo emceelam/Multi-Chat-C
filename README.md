@@ -11,11 +11,11 @@ Open terminal
 
 From other terminal
 
-    telnet 127.0.0.1 4021
+    telnet 127.0.0.1 4020
 
 From yet another terminal
 
-    telnet 127.0.0.1 4021
+    telnet 127.0.0.1 4020
 
 Start typing text in your telnet sessions. Typing "quit" will cause the connection to terminate. Typing nothing for 10 seconds will cause connection to terminate.
 
