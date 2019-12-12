@@ -1,11 +1,11 @@
 # $@  target
-# $<  first dependency 
+# $<  first dependency
 # $^  all dependencies
 # $?  changed dependents
 # $(<F) filename of first dependency
 # $(<D) directory name of first dependency
 
-CFLAGS := -O2 -Wall -pedantic
+CFLAGS := -O2 -Wall
 INCLUDES := -I.
 
 all:  server sigalrm
