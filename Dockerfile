@@ -7,11 +7,9 @@ COPY makefile /root
 COPY server.c /root
 
 WORKDIR /root
-RUN apk upgrade \
-  && apk update \
-  && apk add g++ make libc6-compat \
+RUN apk add g++ make libc6-compat \
   && make server \
-  && apk del g++ make 
+  && apk del g++ make
 
 ENTRYPOINT ["./server"]
 
