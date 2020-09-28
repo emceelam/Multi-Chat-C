@@ -1,11 +1,10 @@
 # Running Docker
 
-    sudo usermod -aG docker emceelam
-
+    # Don't forget the trailing dot in this command
     docker image build --tag multi_chat_c:latest -f Dockerfile .
 
+    # Stop the previous multi_chat_c docker instance, if there is one
     docker container stop multi_chat_c
-      # stop the previous multi_chat_c docker
 
     docker container run \
       --rm \
@@ -14,23 +13,27 @@
       --publish 127.0.0.1:4020:4020 \
       multi_chat_c:latest
 
+    # Do we see the docker multi_chat_c?
     docker container ls
 
-    # from one terminal
+    # From one terminal
     telnet 127.0.0.1 4020
 
-    # from another terminal
+    # From another terminal
     telnet 127.0.0.1 4020
 
-    # from yet another terminal
+    # From yet another terminal
     telnet 127.0.0.1 4020
 
-    # if you want to look inside
-    docker exec --interactive --tty multi_chat_c /bin/sh
+    # Optional: if you want to shell into the docker instance
+    docker container exec --interactive --tty multi_chat_c /bin/sh
 
+    # Optional: normally the docker instance will quit on system shutdown
+    docker container stop multi_chat_c
 
-# second container
+# second docker container
 
+    # Notice we use a different name to differentiate this docker instance
     docker container run \
       --rm \
       --detach \
@@ -39,8 +42,8 @@
       multi_chat_c:latest
 
 
-    # from one terminal
+    # From one terminal
     telnet 127.0.0.1 4021
 
-    # from another terminal
+    # From another terminal
     telnet 127.0.0.1 4021
